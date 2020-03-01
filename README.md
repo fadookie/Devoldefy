@@ -14,3 +14,17 @@ Support remapping client server marker annotation,
 
 # How to use it
 test.json is an example
+
+## How to get classpath
+Open minecraft in dev environment and then invoke this:
+```
+public static void printClassPath() {
+    System.out.println(
+        Arrays.stream(
+            ((URLClassLoader) ClassLoader.getSystemClassLoader()).getURLs()
+        ).map(
+            url -> "\"" + url.getFile().substring(1).replace("%20", " ") + "\""
+        ).collect(Collectors.joining(",\n"))
+    );
+}
+```
