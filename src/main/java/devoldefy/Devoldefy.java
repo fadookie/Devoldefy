@@ -63,7 +63,8 @@ public class Devoldefy {
             targetRoot,
             Arrays.stream(classPath),
             mcpToYarn,
-            true
+            true,
+            new File(configFileName + "_cache")
         );
         
     }
@@ -78,14 +79,9 @@ public class Devoldefy {
         String targetRoot,
         Stream<String> classPathLines,
         boolean mcpToYarn,
-        boolean remapClientServerMarker
+        boolean remapClientServerMarker,
+        File cacheFileDir
     ) throws Exception {
-        
-        File files = new File("files");
-        
-        File f1 = new File(files, "classes.txt");
-        File f2 = new File(files, "fields.txt");
-        File f3 = new File(files, "methods.txt");
         
         System.out.println("Begin Downloading");
         
@@ -100,13 +96,23 @@ public class Devoldefy {
         );
         
         Mappings srg = readTsrg(
-            new Scanner(download(srgUrl, files)),
-            readCsv(new Scanner(extract(download(csvUrl, files), "fields.csv", files))),
-            readCsv(new Scanner(extract(download(csvUrl, files), "methods.csv", files)))
+            new Scanner(download(srgUrl, cacheFileDir)),
+            readCsv(new Scanner(extract(
+                download(csvUrl, cacheFileDir),
+                "fields.csv",
+                cacheFileDir
+            ))),
+            readCsv(new Scanner(extract(
+                download(csvUrl, cacheFileDir),
+                "methods.csv",
+                cacheFileDir
+            )))
         );
         
         Mappings yarn = readTiny(
-            new Scanner(extract(download(yarnUrl, files), "mappings/mappings.tiny", files)),
+            new Scanner(extract(download(yarnUrl, cacheFileDir), "mappings/mappings.tiny",
+                cacheFileDir
+            )),
             "official",
             "named"
         );
@@ -129,35 +135,34 @@ public class Devoldefy {
                 "net/fabricmc/api/EnvType"
             );
         }
-        
+    
         System.out.println("Downloaded");
-        
-        Mappings mappings = srg.invert().chain(yarn);
-        
+    
+        Mappings mappings = srg.invert().chain(yarn, false);
+    
         if (!mcpToYarn) {
             mappings = mappings.invert();
         }
-        
-        f1.createNewFile();
-        f2.createNewFile();
-        f3.createNewFile();
-        FileWriter writerClass = new FileWriter(f1);
-        FileWriter writerField = new FileWriter(f2);
-        FileWriter writerMethod = new FileWriter(f3);
-        
-        writeMappingToFile(writerClass, mappings.classes);
-        writeMappingToFile(writerField, mappings.fields);
-        writeMappingToFile(writerMethod, mappings.methods);
-        
-        System.out.println("Mappings wrote to file");
-        
+    
+        if (mappings.classes.size() < 2000) {
+            System.err.println(
+                "Mapping number too few. Maybe the mapping is downloaded incompletely." +
+                    " Try to delete cache."
+            );
+        }
+    
+        mappings.writeDebugMapping(new File(cacheFileDir, "chained_mapping"));
+        srg.writeDebugMapping(new File(cacheFileDir, "mcp"));
+        yarn.writeDebugMapping(new File(cacheFileDir, "yarn"));
+    
+        System.out.println("Start remapping");
+    
         File sourceDir = new File(sourceRoot);
         File targetDir = new File(targetRoot);
-        Files.walk(targetDir.toPath()).sorted(Comparator.reverseOrder()).map(Path::toFile).forEach(
-            File::delete);
+        Files.walk(targetDir.toPath()).sorted(Comparator.reverseOrder()).map(Path::toFile)
+            .forEach(File::delete);
         targetDir.mkdirs();
-        
-        
+    
         List<Path> classpath = classPathLines.map(
             line -> {
                 File jarFile = new File(line);
@@ -173,30 +178,11 @@ public class Devoldefy {
         System.out.println("Finished");
     }
     
-    private static void writeMappingToFile(FileWriter writer, Map<String, String> mapping) {
-        mapping.entrySet().stream()
-            .sorted(Comparator.comparing(Map.Entry::getKey))
-            .forEach(entry -> {
-                try {
-                    writer.write(entry.getKey() + "->" + entry.getValue() + "\n");
-                }
-                catch (IOException e) {
-                    e.printStackTrace();
-                }
-            });
-    }
-    
-    private static String ask(String message, String fallback) {
-        System.out.print(message + (fallback == null ? "" : " (or blank for " + fallback + ")") + ": ");
-        String result = new Scanner(System.in).nextLine().trim();
-        return result.isEmpty() ? fallback : result;
-    }
-    
     private static File download(String url, File directory) throws IOException {
         System.out.println("downloading " + url);
         
         directory.mkdirs();
-        File file = new File(directory, hash(url) + url.substring(url.lastIndexOf('/') + 1));
+        File file = new File(directory, url.substring(url.lastIndexOf('/') + 1));
         
         if (!file.exists()) {
             try (InputStream in = new URL(url).openStream()) {
@@ -209,11 +195,12 @@ public class Devoldefy {
     
     private static File extract(File zip, String path, File directory) throws IOException {
         directory.mkdirs();
-        File file = new File(directory, hash(zip.getName() + path));
-        
+        File file = new File(directory, path);
+        file.mkdirs();
+    
         try (ZipFile zipFile = new ZipFile(zip)) {
             InputStream is = null;
-            
+        
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry zipEntry = entries.nextElement();
@@ -483,25 +470,86 @@ public class Devoldefy {
         public final Map<String, String> classes = new LinkedHashMap<>();
         public final Map<String, String> fields = new LinkedHashMap<>();
         public final Map<String, String> methods = new LinkedHashMap<>();
-        
-        public Mappings chain(Mappings mappings) {
+    
+        public Mappings chain(Mappings other, boolean defaultIfMissing) {
             Mappings result = new Mappings();
-            
-            classes.forEach((a, b) -> result.classes.put(a, mappings.classes.getOrDefault(b, b)));
-            fields.forEach((a, b) -> result.fields.put(a, mappings.fields.getOrDefault(b, b)));
-            methods.forEach((a, b) -> result.methods.put(a, mappings.methods.getOrDefault(b, b)));
-            
+        
+            if (defaultIfMissing) {
+                classes.forEach((a, b) -> result.classes.put(
+                    a, other.classes.getOrDefault(b, b)
+                ));
+                fields.forEach((a, b) -> result.fields.put(
+                    a, other.fields.getOrDefault(b, b)
+                ));
+                methods.forEach((a, b) -> result.methods.put(
+                    a, other.methods.getOrDefault(b, b)
+                ));
+            }
+            else {
+                classes.forEach((a, b) -> {
+                    String s = other.classes.get(b);
+                    if (s != null) {
+                        result.classes.put(a, s);
+                    }
+                });
+                fields.forEach((a, b) -> {
+                    String s = other.fields.get(b);
+                    if (s != null) {
+                        result.fields.put(a, s);
+                    }
+                });
+                methods.forEach((a, b) -> {
+                    String s = other.methods.get(b);
+                    if (s != null) {
+                        result.methods.put(a, s);
+                    }
+                });
+            }
+        
+        
             return result;
         }
-        
+    
         public Mappings invert() {
             Mappings result = new Mappings();
-            
+        
             classes.forEach((a, b) -> result.classes.put(b, a));
             fields.forEach((a, b) -> result.fields.put(b, a));
             methods.forEach((a, b) -> result.methods.put(b, a));
-            
+        
             return result;
         }
+    
+        public void writeDebugMapping(File dir) {
+            dir.mkdirs();
+            writeMappingData(this.classes, new File(dir, "classes.txt"));
+            writeMappingData(this.fields, new File(dir, "fields.txt"));
+            writeMappingData(this.methods, new File(dir, "methods.txt"));
+        }
+    
+        private void writeMappingData(Map<String, String> data, File textFile) {
+            try {
+                textFile.createNewFile();
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
+            try (FileWriter fileWriter = new FileWriter(textFile)) {
+                data.entrySet().stream()
+                    .sorted(Comparator.comparing(Map.Entry::getKey))
+                    .forEach(entry -> {
+                        try {
+                            fileWriter.write(entry.getKey() + "->" + entry.getValue() + "\n");
+                        }
+                        catch (IOException e) {
+                            e.printStackTrace();
+                        }
+                    });
+                fileWriter.flush();
+            }
+            catch (IOException e) {
+            }
+        }
     }
+    
 }
