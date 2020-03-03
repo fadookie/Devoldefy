@@ -159,8 +159,6 @@ public class Devoldefy {
     
         File sourceDir = new File(sourceRoot);
         File targetDir = new File(targetRoot);
-        Files.walk(targetDir.toPath()).sorted(Comparator.reverseOrder()).map(Path::toFile)
-            .forEach(File::delete);
         targetDir.mkdirs();
     
         List<Path> classpath = classPathLines.map(
