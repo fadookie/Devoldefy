@@ -17,6 +17,18 @@ Support remapping client server marker annotation
 test.json is an example
 
 ## How to get classpath
+
+Add these into build.gradle
+```
+task printClasspath {
+	doLast {
+		configurations.testCompile.each { println it }
+	}
+}
+```
+and run `gradlew printClasspath`
+
+Another method:
 Open minecraft in dev environment and then invoke this:
 ```
 public static void printClassPath() {
