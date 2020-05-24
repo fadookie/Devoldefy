@@ -5,13 +5,17 @@ import org.cadixdev.lorenz.MappingSet;
 import org.cadixdev.lorenz.impl.MappingSetImpl;
 import org.cadixdev.lorenz.impl.MappingSetModelFactoryImpl;
 import org.cadixdev.mercury.Mercury;
+import org.cadixdev.mercury.mixin.MixinRemapper;
 
 import java.io.*;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
+import java.nio.file.attribute.BasicFileAttributes;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.*;
@@ -21,14 +25,28 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class Devoldefy {
+    public static boolean test = false;
+    
     private static final String CSV = "http://export.mcpbot.bspk.rs/mcp_{csv_type}_nodoc/{csv_build}-{mc_version}/mcp_{csv_type}_nodoc-{csv_build}-{mc_version}.zip";
     private static final String SRG = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/{mc_version}/joined.tsrg";
+    private static final String SRG_NEW = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/release/{mc_version}/joined.tsrg";
     private static final String YARN = "http://maven.modmuss50.me/net/fabricmc/yarn/{target_minecraft_version}+build.{yarn_build}/yarn-{target_minecraft_version}+build.{yarn_build}.jar";
+    private static final String YARN_V2 = "http://maven.modmuss50.me/net/fabricmc/yarn/{target_minecraft_version}+build.{yarn_build}/yarn-{target_minecraft_version}+build.{yarn_build}-v2.jar";
+    
+    public static final boolean needsConfirmation = false;
     
     public static void main(String[] args) throws Exception {
-        System.out.println("Input Config File Name:");
         
-        String configFileName = new Scanner(System.in).nextLine().trim();
+        
+        String configFileName;
+        
+        if (args.length == 0) {
+            System.out.println("Input Config File Name:");
+            configFileName = new Scanner(System.in).nextLine().trim();
+        }
+        else {
+            configFileName = args[0].trim();
+        }
         
         File configFile = new File(configFileName + ".json");
         
@@ -67,6 +85,53 @@ public class Devoldefy {
             new File(configFileName + "_cache")
         );
         
+        if (config.copiedSubPackage != null && !config.copiedSubPackage.isEmpty()) {
+            Path copyFrom = new File(targetRoot).toPath().resolve(config.copiedSubPackage);
+            Path copyTo = new File(config.copyTargetDir).toPath();
+            System.out.println("Copy from " + copyFrom);
+            System.out.println("Copy to " + copyTo);
+            
+            if (needsConfirmation) {
+                System.out.println("Input \"confirm\" to copy");
+                
+                String confirmMessage = new Scanner(System.in).nextLine().trim();
+                
+                if (!confirmMessage.equals("confirm")) {
+                    System.out.println("didn't copy");
+                    return;
+                }
+            }
+            
+            deleteDirectory(copyTo);
+            copyDirectory(copyFrom, copyTo);
+        }
+    }
+    
+    private static void copyDirectory(Path sourcePath, Path targetPath) throws IOException {
+        Files.walkFileTree(sourcePath, new SimpleFileVisitor<Path>() {
+            @Override
+            public FileVisitResult preVisitDirectory(
+                final Path dir,
+                final BasicFileAttributes attrs
+            ) throws IOException {
+                Files.createDirectories(targetPath.resolve(sourcePath
+                    .relativize(dir)));
+                return FileVisitResult.CONTINUE;
+            }
+            
+            @Override
+            public FileVisitResult visitFile(
+                final Path file,
+                final BasicFileAttributes attrs
+            ) throws IOException {
+                Files.copy(
+                    file,
+                    targetPath.resolve(sourcePath.relativize(file)),
+                    StandardCopyOption.REPLACE_EXISTING
+                );
+                return FileVisitResult.CONTINUE;
+            }
+        });
     }
     
     private static void perform(
@@ -89,7 +154,7 @@ public class Devoldefy {
             "{csv_type}",
             mcpChannel
         ).replace("{csv_build}", mcpBuild);
-        String srgUrl = SRG.replace("{mc_version}", yarnVersion);
+        String srgUrl = SRG_NEW.replace("{mc_version}", yarnVersion);
         String yarnUrl = YARN.replace("{target_minecraft_version}", yarnVersion).replace(
             "{yarn_build}",
             yarnBuild
@@ -109,12 +174,12 @@ public class Devoldefy {
             )))
         );
         
-        Mappings yarn = readTiny(
+        Mappings yarn;
+        yarn = readYarnV1(
             new Scanner(extract(download(yarnUrl, cacheFileDir), "mappings/mappings.tiny",
                 cacheFileDir
             )),
-            "official",
-            "named"
+            "official", "named"
         );
         
         if (remapClientServerMarker) {
@@ -135,32 +200,34 @@ public class Devoldefy {
                 "net/fabricmc/api/EnvType"
             );
         }
-    
+        
         System.out.println("Downloaded");
-    
+        
         Mappings mappings = srg.invert().chain(yarn, false);
-    
+        
         if (!mcpToYarn) {
             mappings = mappings.invert();
         }
-    
+        
         if (mappings.classes.size() < 2000) {
             System.err.println(
                 "Mapping number too few. Maybe the mapping is downloaded incompletely." +
                     " Try to delete cache."
             );
         }
-    
+        
         mappings.writeDebugMapping(new File(cacheFileDir, "chained_mapping"));
         srg.writeDebugMapping(new File(cacheFileDir, "mcp"));
         yarn.writeDebugMapping(new File(cacheFileDir, "yarn"));
-    
+        
         System.out.println("Start remapping");
-    
+        
         File sourceDir = new File(sourceRoot);
         File targetDir = new File(targetRoot);
         targetDir.mkdirs();
-    
+        
+        deleteDirectory(targetDir.toPath());
+        
         List<Path> classpath = classPathLines.map(
             line -> {
                 File jarFile = new File(line);
@@ -174,6 +241,11 @@ public class Devoldefy {
         remap(sourceDir.toPath(), targetDir.toPath(), classpath, mappings);
         
         System.out.println("Finished");
+    }
+    
+    private static void deleteDirectory(Path targetPath) throws IOException {
+        Files.walk(targetPath).sorted(Comparator.reverseOrder()).map(Path::toFile)
+            .forEach(File::delete);
     }
     
     private static File download(String url, File directory) throws IOException {
@@ -298,7 +370,7 @@ public class Devoldefy {
         return mappings;
     }
     
-    private static Mappings readTiny(Scanner s, String from, String to) {
+    private static Mappings readYarnV1(Scanner s, String from, String to) {
         String[] header = s.nextLine().split("\t");
         Map<String, Integer> columns = new HashMap<>();
         
@@ -350,6 +422,7 @@ public class Devoldefy {
         return mappings;
     }
     
+    
     private static void remap(
         Path source,
         Path target,
@@ -383,8 +456,8 @@ public class Devoldefy {
                 .setDeobfuscatedName(b1.substring(0, b1.indexOf('(')));
         });
         
+        mercury.getProcessors().add(MixinRemapper.create(mappingSet));
         mercury.getProcessors().add(new MyRemapper(mappingSet));
-//        mercury.getProcessors().add(MixinRemapper.create(mappingSet));
         
         mercury.rewrite(source, target);
     }

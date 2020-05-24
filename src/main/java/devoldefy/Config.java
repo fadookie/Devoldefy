@@ -17,4 +17,7 @@ public class Config {
     
     public String[] mcpSourceClasspath;
     public String[] yarnSourceClasspath;
+    
+    public String copiedSubPackage;
+    public String copyTargetDir;
 }

@@ -24,34 +24,36 @@ import java.util.*;
 import static org.cadixdev.mercury.util.BombeBindings.isPackagePrivate;
 
 class MyRemapperVisitor extends MySimpleRemapperVisitor {
-
+    
     private final ImportRewrite importRewrite;
     private final Deque<ImportContext> importStack = new ArrayDeque<>();
-
+    
     MyRemapperVisitor(RewriteContext context, MappingSet mappings) {
         super(context, mappings);
-
+        
         this.importRewrite = context.createImportRewrite();
         importRewrite.setUseContextToFilterImplicitImports(true);
-
-        TopLevelClassMapping primary = mappings.getTopLevelClassMapping(context.getQualifiedPrimaryType()).orElse(null);
+        
+        TopLevelClassMapping primary = mappings.getTopLevelClassMapping(context.getQualifiedPrimaryType()).orElse(
+            null);
         if (primary != null) {
             context.setPackageName(primary.getDeobfuscatedPackage().replace('/', '.'));
             this.importRewrite.setImplicitPackageName(context.getPackageName());
-
+            
             String simpleDeobfuscatedName = primary.getSimpleDeobfuscatedName();
             context.setPrimaryType(simpleDeobfuscatedName);
-
+            
             List<String> implicitTypes = new ArrayList<>();
             String simpleObfuscatedName = primary.getSimpleObfuscatedName();
-
+            
             @SuppressWarnings("unchecked")
             List<AbstractTypeDeclaration> types = context.getCompilationUnit().types();
             for (AbstractTypeDeclaration type : types) {
                 String name = type.getName().getIdentifier();
                 if (name.equals(simpleObfuscatedName)) {
                     implicitTypes.add(simpleDeobfuscatedName);
-                } else {
+                }
+                else {
                     implicitTypes.add(mappings.getTopLevelClassMapping(context.getPackageName() + '.' + name)
                         .map(Mapping::getSimpleDeobfuscatedName)
                         .orElse(name));
@@ -60,92 +62,120 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
             this.importRewrite.setImplicitTypes(implicitTypes);
         }
     }
-
+    
     private void remapType(SimpleName node, ITypeBinding binding) {
         if (binding.isTypeVariable()) {
             return;
         }
-
-        ClassMapping<?, ?> mapping = this.mappings.computeClassMapping(binding.getBinaryName()).orElse(null);
-
+        
+        ClassMapping<?, ?> mapping = this.mappings.computeClassMapping(binding.getBinaryName()).orElse(
+            null);
+        
         if (node.getParent() instanceof AbstractTypeDeclaration || binding.isLocal()) {
             if (mapping != null) {
                 updateIdentifier(node, mapping.getSimpleDeobfuscatedName());
             }
             return;
         }
-
-        String qualifiedName = (mapping != null ? mapping.getFullDeobfuscatedName().replace('/', '.') : binding.getBinaryName()).replace('$', '.');
+        
+        String qualifiedName = (mapping != null ? mapping.getFullDeobfuscatedName().replace(
+            '/',
+            '.'
+        ) : binding.getBinaryName()).replace('$', '.');
         String newName = this.importRewrite.addImport(qualifiedName, this.importStack.peek());
-
+        
         if (!node.getIdentifier().equals(newName)) {
             if (newName.indexOf('.') == -1) {
-                this.context.createASTRewrite().set(node, SimpleName.IDENTIFIER_PROPERTY, newName, null);
-            } else {
+                this.context.createASTRewrite().set(
+                    node,
+                    SimpleName.IDENTIFIER_PROPERTY,
+                    newName,
+                    null
+                );
+            }
+            else {
                 // Qualified name
                 this.context.createASTRewrite().replace(node, node.getAST().newName(newName), null);
             }
         }
     }
-
+    
     private void remapQualifiedType(QualifiedName node, ITypeBinding binding) {
         String binaryName = binding.getBinaryName();
         TopLevelClassMapping mapping = this.mappings.getTopLevelClassMapping(binaryName).orElse(null);
-
+        
         if (mapping == null) {
             return;
         }
-
+        
         String newName = mapping.getDeobfuscatedName().replace('/', '.');
         if (binaryName.equals(newName)) {
             return;
         }
-
+        
         this.context.createASTRewrite().replace(node, node.getAST().newName(newName), null);
     }
-
+    
     private void remapInnerType(QualifiedName qualifiedName, ITypeBinding outerClass) {
-        ClassMapping<?, ?> outerClassMapping = this.mappings.computeClassMapping(outerClass.getBinaryName()).orElse(null);
+        ClassMapping<?, ?> outerClassMapping = this.mappings.computeClassMapping(outerClass.getBinaryName()).orElse(
+            null);
         if (outerClassMapping == null) {
             return;
         }
-
+        
         SimpleName node = qualifiedName.getName();
-        InnerClassMapping mapping = outerClassMapping.getInnerClassMapping(node.getIdentifier()).orElse(null);
+        InnerClassMapping mapping = outerClassMapping.getInnerClassMapping(node.getIdentifier()).orElse(
+            null);
         if (mapping == null) {
             return;
         }
-
+        
         updateIdentifier(node, mapping.getDeobfuscatedName());
     }
-
+    
     @Override
     protected void visit(SimpleName node, IBinding binding) {
-        switch (binding.getKind()) {
-            case IBinding.TYPE:
-                remapType(node, (ITypeBinding) binding);
-                break;
-            case IBinding.METHOD:
-            case IBinding.VARIABLE:
-                super.visit(node, binding);
-                break;
-            case IBinding.PACKAGE:
-                // This is ignored because it should be covered by separate handling
-                // of QualifiedName (for full-qualified class references),
-                // PackageDeclaration and ImportDeclaration
-            default:
-                throw new IllegalStateException("Unhandled binding: " + binding.getClass().getSimpleName() + " (" + binding.getKind() + ')');
+        if (binding == null) {
+            System.out.println("Skipping " + node);
+            return;
         }
+        try {
+            switch (binding.getKind()) {
+                case IBinding.TYPE:
+                    remapType(node, (ITypeBinding) binding);
+                    break;
+                case IBinding.METHOD:
+                case IBinding.VARIABLE:
+                    super.visit(node, binding);
+                    break;
+                case IBinding.PACKAGE:
+                    // This is ignored because it should be covered by separate handling
+                    // of QualifiedName (for full-qualified class references),
+                    // PackageDeclaration and ImportDeclaration
+                default:
+                    throw new IllegalStateException("Unhandled binding: " + binding.getClass().getSimpleName() + " (" + binding.getKind() + ')');
+            }
+        }
+        catch (Throwable t) {
+            throw new RuntimeException(
+                "Remapping " + String.valueOf(node) + " " + String.valueOf(binding),
+                t
+            );
+        }
+        
     }
-
+    
     @Override
     public boolean visit(QualifiedName node) {
         IBinding binding = node.resolveBinding();
+        if (binding == null) {
+            System.out.println("Null Binding?" + node);
+        }
         if (binding.getKind() != IBinding.TYPE) {
             // Unpack the qualified name and remap method/field and type separately
             return true;
         }
-
+        
         Name qualifier = node.getQualifier();
         IBinding qualifierBinding = qualifier.resolveBinding();
         switch (qualifierBinding.getKind()) {
@@ -156,28 +186,32 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
             case IBinding.TYPE:
                 // Remap inner type separately
                 remapInnerType(node, (ITypeBinding) qualifierBinding);
-
+    
                 // Remap the qualifier
                 qualifier.accept(this);
                 break;
             default:
                 throw new IllegalStateException("Unexpected qualifier binding: " + binding.getClass().getSimpleName() + " (" + binding.getKind() + ')');
         }
-
+        
         return false;
     }
-
+    
     @Override
     public boolean visit(PackageDeclaration node) {
         String currentPackage = node.getName().getFullyQualifiedName();
-
+        
         if (!currentPackage.equals(this.context.getPackageName())) {
-            this.context.createASTRewrite().replace(node.getName(), node.getAST().newName(this.context.getPackageName()), null);
+            this.context.createASTRewrite().replace(
+                node.getName(),
+                node.getAST().newName(this.context.getPackageName()),
+                null
+            );
         }
-
+        
         return false;
     }
-
+    
     @Override
     public boolean visit(ImportDeclaration node) {
         IBinding binding = node.resolveBinding();
@@ -187,27 +221,33 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
                     ITypeBinding typeBinding = (ITypeBinding) binding;
                     String name = typeBinding.getBinaryName();
                     ClassMapping<?, ?> mapping = this.mappings.computeClassMapping(name).orElse(null);
-                    if (mapping != null && !name.equals(mapping.getFullDeobfuscatedName().replace('/', '.'))) {
+                    if (mapping != null && !name.equals(mapping.getFullDeobfuscatedName().replace(
+                        '/',
+                        '.'
+                    ))) {
                         this.importRewrite.removeImport(typeBinding.getQualifiedName());
                     }
-
+        
                     break;
             }
         }
         return false;
     }
-
+    
     private void pushImportContext(ITypeBinding binding) {
-        ImportContext context = new ImportContext(this.importRewrite.getDefaultImportRewriteContext(), this.importStack.peek());
+        ImportContext context = new ImportContext(
+            this.importRewrite.getDefaultImportRewriteContext(),
+            this.importStack.peek()
+        );
         collectImportContext(context, binding);
         this.importStack.push(context);
     }
-
+    
     private void collectImportContext(ImportContext context, ITypeBinding binding) {
         if (binding == null) {
             return;
         }
-
+        
         // Names from inner classes
         for (ITypeBinding inner : binding.getDeclaredTypes()) {
             int modifiers = inner.getModifiers();
@@ -217,9 +257,10 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
                     continue;
                 }
             }
-
-            ClassMapping<?, ?> mapping = this.mappings.getClassMapping(inner.getBinaryName()).orElse(null);
-
+    
+            ClassMapping<?, ?> mapping = this.mappings.getClassMapping(inner.getBinaryName()).orElse(
+                null);
+    
             if (isPackagePrivate(modifiers)) {
                 // Must come from the same package
                 String packageName = mapping != null ? mapping.getDeobfuscatedPackage() : inner.getPackage().getName();
@@ -227,17 +268,21 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
                     continue;
                 }
             }
-
+    
             String simpleName;
             String qualifiedName;
             if (mapping != null) {
                 simpleName = mapping.getSimpleDeobfuscatedName();
-                qualifiedName = mapping.getFullDeobfuscatedName().replace('/', '.').replace('$', '.');
-            } else {
+                qualifiedName = mapping.getFullDeobfuscatedName().replace('/', '.').replace(
+                    '$',
+                    '.'
+                );
+            }
+            else {
                 simpleName = inner.getName();
                 qualifiedName = inner.getBinaryName().replace('$', '.');
             }
-
+    
             if (!context.conflicts.contains(simpleName)) {
                 String current = context.implicit.putIfAbsent(simpleName, qualifiedName);
                 if (current != null && !current.equals(qualifiedName)) {
@@ -246,94 +291,95 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
                 }
             }
         }
-
+        
         // Inherited names
         collectImportContext(context, binding.getSuperclass());
         for (ITypeBinding parent : binding.getInterfaces()) {
             collectImportContext(context, parent);
         }
     }
-
+    
     @Override
     public boolean visit(AnnotationTypeDeclaration node) {
         pushImportContext(node.resolveBinding());
         return true;
     }
-
+    
     @Override
     public boolean visit(AnonymousClassDeclaration node) {
         pushImportContext(node.resolveBinding());
         return true;
     }
-
+    
     @Override
     public boolean visit(EnumDeclaration node) {
         pushImportContext(node.resolveBinding());
         return true;
     }
-
+    
     @Override
     public boolean visit(TypeDeclaration node) {
         pushImportContext(node.resolveBinding());
         return true;
     }
-
+    
     @Override
     public void endVisit(AnnotationTypeDeclaration node) {
         this.importStack.pop();
     }
-
+    
     @Override
     public void endVisit(AnonymousClassDeclaration node) {
         this.importStack.pop();
     }
-
+    
     @Override
     public void endVisit(EnumDeclaration node) {
         this.importStack.pop();
     }
-
+    
     @Override
     public void endVisit(TypeDeclaration node) {
         this.importStack.pop();
     }
-
+    
     private static class ImportContext extends ImportRewrite.ImportRewriteContext {
         private final ImportRewrite.ImportRewriteContext defaultContext;
         final Map<String, String> implicit;
         final Set<String> conflicts;
-
+        
         ImportContext(ImportRewrite.ImportRewriteContext defaultContext, ImportContext parent) {
             this.defaultContext = defaultContext;
             if (parent != null) {
                 this.implicit = new HashMap<>(parent.implicit);
                 this.conflicts = new HashSet<>(parent.conflicts);
-            } else {
+            }
+            else {
                 this.implicit = new HashMap<>();
                 this.conflicts = new HashSet<>();
             }
         }
-
+        
         @Override
         public int findInContext(String qualifier, String name, int kind) {
             int result = this.defaultContext.findInContext(qualifier, name, kind);
             if (result != RES_NAME_UNKNOWN) {
                 return result;
             }
-
+            
             if (kind == KIND_TYPE) {
                 String current = implicit.get(name);
                 if (current != null) {
                     return current.equals(qualifier + '.' + name) ? RES_NAME_FOUND : RES_NAME_CONFLICT;
                 }
-
+                
                 if (conflicts.contains(name)) {
                     return RES_NAME_CONFLICT;  // TODO
                 }
             }
-
+            
             return RES_NAME_UNKNOWN;
         }
     }
-
+    
 }
