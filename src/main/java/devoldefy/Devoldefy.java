@@ -64,8 +64,14 @@ public class Devoldefy {
         String yarnVersion = config.yarnGameVersion;
         String yarnBuild = config.yarnBuild;
         
-        boolean mcpToYarn = !config.additionalArguments.contains("invert");
-        
+        boolean mcpToYarn;
+        if (config.additionalArguments == null) {
+            mcpToYarn = true;
+        }
+        else {
+            mcpToYarn = !config.additionalArguments.contains("invert");
+        }
+    
         String sourceRoot = mcpToYarn ? config.mcpSourceCode : config.yarnSourceCode;
         String targetRoot = mcpToYarn ? config.yarnSourceCode : config.mcpSourceCode;
         
@@ -267,10 +273,10 @@ public class Devoldefy {
         directory.mkdirs();
         File file = new File(directory, path);
         file.mkdirs();
-    
+        
         try (ZipFile zipFile = new ZipFile(zip)) {
             InputStream is = null;
-        
+            
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
             while (entries.hasMoreElements()) {
                 ZipEntry zipEntry = entries.nextElement();
@@ -541,10 +547,10 @@ public class Devoldefy {
         public final Map<String, String> classes = new LinkedHashMap<>();
         public final Map<String, String> fields = new LinkedHashMap<>();
         public final Map<String, String> methods = new LinkedHashMap<>();
-    
+        
         public Mappings chain(Mappings other, boolean defaultIfMissing) {
             Mappings result = new Mappings();
-        
+            
             if (defaultIfMissing) {
                 classes.forEach((a, b) -> result.classes.put(
                     a, other.classes.getOrDefault(b, b)
@@ -576,28 +582,28 @@ public class Devoldefy {
                     }
                 });
             }
-        
-        
+            
+            
             return result;
         }
-    
+        
         public Mappings invert() {
             Mappings result = new Mappings();
-        
+            
             classes.forEach((a, b) -> result.classes.put(b, a));
             fields.forEach((a, b) -> result.fields.put(b, a));
             methods.forEach((a, b) -> result.methods.put(b, a));
-        
+            
             return result;
         }
-    
+        
         public void writeDebugMapping(File dir) {
             dir.mkdirs();
             writeMappingData(this.classes, new File(dir, "classes.txt"));
             writeMappingData(this.fields, new File(dir, "fields.txt"));
             writeMappingData(this.methods, new File(dir, "methods.txt"));
         }
-    
+        
         private void writeMappingData(Map<String, String> data, File textFile) {
             try {
                 textFile.createNewFile();
