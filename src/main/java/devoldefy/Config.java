@@ -1,7 +1,8 @@
 package devoldefy;
 
+import java.util.Set;
+
 public class Config {
-    public boolean mcpToYarn;
     
     public String mcpGameVersion;
     public String mcpChannel;
@@ -15,9 +16,10 @@ public class Config {
     
     public boolean remapClientServerMarker;
     
-    public String[] mcpSourceClasspath;
-    public String[] yarnSourceClasspath;
+    public String[] classpath;
     
     public String copiedSubPackage;
     public String copyTargetDir;
+    
+    public Set<String> additionalArguments;
 }

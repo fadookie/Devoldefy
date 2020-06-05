@@ -1,5 +1,4 @@
 {
-  "mcpToYarn": true,
   "mcpGameVersion": "1.14.3",
   "mcpChannel": "snapshot",
   "mcpBuild": "20191119",
@@ -8,7 +7,7 @@
   "mcpSourceCode": "C:\\games\\mc_modding\\my_devoldefy\\mcpsource",
   "yarnSourceCode": "C:\\games\\mc_modding\\my_devoldefy\\yarnsource",
   "remapClientServerMarker": true,
-  "mcpSourceClasspath": [
+  "classpath": [
     "C:/Program Files/Java/jdk1.8.0_181/jre/lib/charsets.jar",
     "C:/Program Files/Java/jdk1.8.0_181/jre/lib/deploy.jar",
     "C:/Program Files/Java/jdk1.8.0_181/jre/lib/ext/access-bridge-64.jar",
@@ -113,6 +112,5 @@
     "C:/Program Files/JetBrains/IntelliJ IDEA Community Edition 2019.1.1/lib/idea_rt.jar",
     "C:/Users/HP/.IdeaIC2019.3/system/groovyHotSwap/gragent.jar",
     "C:/Users/HP/.IdeaIC2019.3/system/captureAgent/debugger-agent.jar"
-  ],
-  "yarnSourceClasspath": []
+  ]
 }

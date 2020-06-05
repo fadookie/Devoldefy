@@ -64,12 +64,12 @@ public class Devoldefy {
         String yarnVersion = config.yarnGameVersion;
         String yarnBuild = config.yarnBuild;
         
-        boolean mcpToYarn = config.mcpToYarn;
+        boolean mcpToYarn = !config.additionalArguments.contains("invert");
         
         String sourceRoot = mcpToYarn ? config.mcpSourceCode : config.yarnSourceCode;
         String targetRoot = mcpToYarn ? config.yarnSourceCode : config.mcpSourceCode;
         
-        String[] classPath = mcpToYarn ? config.mcpSourceClasspath : config.yarnSourceClasspath;
+        String[] classPath = config.classpath;
         
         perform(
             mcpVersion,
