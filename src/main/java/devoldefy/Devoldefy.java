@@ -11,6 +11,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -20,21 +21,24 @@ import java.util.zip.ZipFile;
 
 public class Devoldefy {
     private static final String CSV = "http://export.mcpbot.bspk.rs/mcp_{csv_type}_nodoc/{csv_build}-{mc_version}/mcp_{csv_type}_nodoc-{csv_build}-{mc_version}.zip";
-    private static final String SRG = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/{mc_version}/joined.tsrg";
+    private static final String SRG = "https://raw.githubusercontent.com/MinecraftForge/MCPConfig/master/versions/release/{mc_version}/joined.tsrg";
     private static final String YARN = "http://maven.modmuss50.me/net/fabricmc/yarn/{target_minecraft_version}+build.{yarn_build}/yarn-{target_minecraft_version}+build.{yarn_build}.jar";
-    private static final String FORGE_JAR = "{home_dir}/.gradle/caches/minecraft/net/minecraftforge/forge/{mc_version}-{forge_version}/{csv_type}/{csv_build}/forgeSrc-{mc_version}-{forge_version}.jar";
+    //                                       ./build/fg_cache/net/minecraftforge/forge/1.15.2-31.1.63_mapped_snapshot_20200225-1.15.1/forge-1.15.2-31.1.63_mapped_snapshot_20200225-1.15.1-sources.jar
+    private static final String FORGE_JAR = "build/fg_cache/net/minecraftforge/forge/{mc_version}-{forge_version}_mapped_{csv_type}_{csv_build}-{source_mappings_version}/forge-{mc_version}-{forge_version}_mapped_{csv_type}_{csv_build}-{source_mappings_version}-sources.jar";
+//  private static final String FORGE_JAR = "./build/fg_cache/net/minecraftforge/forge/{mc_version}-{forge_version}/{csv_type}/{csv_build}/forgeSrc-{mc_version}-{forge_version}.jar";
+    //                                       ./build/fg_cache/net/minecraftforge/forge/1.15.2-31.1.63/snapshot/20200225/forgeSrc-1.15.2-31.1.63.jar
 
     public static void main(String[] args) throws Exception {
         File files = new File("files");
 
-        String sourceMinecraftVersion = ask("Source Minecraft version", "1.13.2");
-        String sourceMappingsVersion = ask("Source mappings version", "1.13.2");
-        String sourceForgeVersion = ask("Source forge version", "14.23.4.2703");
+        String sourceMinecraftVersion = ask("Source Minecraft version", "1.15.2");
+        String sourceMappingsVersion = ask("Source mappings version", "1.15.1");
+        String sourceForgeVersion = ask("Source forge version", "31.1.63");
         String sourceMappingsType = ask("Source mappings type", "snapshot");
-        String sourceMappingsBuild = ask("Source mappings build", "20190424");
+        String sourceMappingsBuild = ask("Source mappings build", "20200225");
 
-        String targetMinecraftVersion = ask("Target Minecraft version", "1.14");
-        String targetYarnBuild = ask("Target Yarn build", "2");
+        String targetMinecraftVersion = ask("Target Minecraft version", "1.15.2");
+        String targetYarnBuild = ask("Target Yarn build", "17");
 
         String sourceRoot = ask("Path to source root", "./src/main/java");
         String targetRoot = ask("Path to target root", "./updated_src/main/java");
@@ -42,7 +46,7 @@ public class Devoldefy {
         String csvUrl = CSV.replace("{mc_version}", sourceMappingsVersion).replace("{csv_type}", sourceMappingsType).replace("{csv_build}", sourceMappingsBuild);
         String srgUrl = SRG.replace("{mc_version}", targetMinecraftVersion);
         String yarnUrl = YARN.replace("{target_minecraft_version}", targetMinecraftVersion).replace("{yarn_build}", targetYarnBuild);
-        String forgeLocation = FORGE_JAR.replace("{home_dir}", System.getProperty("user.home")).replace("{mc_version}", sourceMinecraftVersion).replace("{forge_version}", sourceForgeVersion).replace("{csv_type}", sourceMappingsType).replace("{csv_build}", sourceMappingsBuild);
+        String forgeLocation = FORGE_JAR.replace("{home_dir}", System.getProperty("user.home")).replace("{mc_version}", sourceMinecraftVersion).replace("{forge_version}", sourceForgeVersion).replace("{csv_type}", sourceMappingsType).replace("{csv_build}", sourceMappingsBuild).replace("{source_mappings_version}", sourceMappingsVersion);
 
         Mappings srg = readTsrg(
                 new Scanner(download(srgUrl, files)),
@@ -64,19 +68,27 @@ public class Devoldefy {
         targetDir.mkdirs();
 
         List<Path> classpath = new ArrayList<>();
-        File forgeJar = new File(forgeLocation);
+        File forgeJar = new File(Paths.get(forgeLocation).toUri());
         if (!forgeJar.exists()) {
             throw new IllegalStateException("Forge jar not found at " + forgeJar.getCanonicalPath());
         }
-        classpath.add(forgeJar.toPath());
+        System.out.println("FORGE jar path:" + forgeJar.toPath().toAbsolutePath());
+        classpath.add(forgeJar.toPath().toAbsolutePath());
+
+        // Dump mappings
+        Files.write(Paths.get("fields.tsv"), Mappings.toTSV(mappings.fields).getBytes());
+        Files.write(Paths.get("methods.tsv"), Mappings.toTSV(mappings.methods).getBytes());
+        Files.write(Paths.get("classes.tsv"), Mappings.toTSV(mappings.classes).getBytes());
 
         remap(sourceDir.toPath(), targetDir.toPath(), classpath, mappings);
     }
 
     private static String ask(String message, String fallback) {
         System.out.print(message + (fallback == null ? "" : " (or blank for " + fallback + ")") + ": ");
-        String result = new Scanner(System.in).nextLine().trim();
-        return result.isEmpty() ? fallback : result;
+        System.out.println();
+        return fallback;
+//        String result = new Scanner(System.in).nextLine().trim();
+//        return result.isEmpty() ? fallback : result;
     }
 
     private static File download(String url, File directory) throws IOException {
@@ -230,6 +242,7 @@ public class Devoldefy {
         return mappings;
     }
 
+
     private static void remap(Path source, Path target, List<Path> classpath, Mappings mappings) throws Exception {
         Mercury mercury = new Mercury();
         mercury.getClassPath().addAll(classpath);
@@ -348,6 +361,28 @@ public class Devoldefy {
             methods.forEach((a, b) -> result.methods.put(b, a));
 
             return result;
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+
+            sb.append("# classes\n");
+            sb.append(toTSV(classes));
+
+            sb.append("\n\n# fields\n");
+            sb.append(toTSV(fields));
+
+            sb.append("\n\n# methods\n");
+            sb.append(toTSV(methods));
+
+            return sb.toString();
+        }
+
+        public static String toTSV(Map<String, String> collection) {
+            StringBuilder sb = new StringBuilder();
+            collection.forEach((key, value) -> sb.append(key + "\t" + value + "\n"));
+            return sb.toString();
         }
     }
 }
