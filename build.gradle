@@ -17,11 +17,15 @@ repositories {
     maven {
         url = 'https://repo1.maven.org/maven2'
     }
+    maven {
+        url = 'https://oss.sonatype.org/content/repositories/snapshots/'
+    }
 }
 
 
 dependencies {
-    implementation 'org.cadixdev:mercury:0.1.0.fabric-SNAPSHOT'
+    implementation 'org.cadixdev:mercury:0.1.1.fabric-SNAPSHOT'
+    implementation 'org.cadixdev:mercurymixin:0.1.0-SNAPSHOT'
     implementation 'com.google.code.gson:gson:2.8.6'
 }
 
