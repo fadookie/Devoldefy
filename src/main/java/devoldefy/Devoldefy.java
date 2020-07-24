@@ -437,6 +437,7 @@ public class Devoldefy {
     ) throws Exception {
         Mercury mercury = new Mercury();
         mercury.getClassPath().addAll(classpath);
+        mercury.setGracefulClasspathChecks(true);
         
         MappingSet mappingSet = new MappingSetImpl(new MappingSetModelFactoryImpl());
         mappings.classes.forEach((a, b) -> mappingSet

@@ -170,6 +170,7 @@ class MyRemapperVisitor extends MySimpleRemapperVisitor {
         IBinding binding = node.resolveBinding();
         if (binding == null) {
             System.out.println("Null Binding?" + node);
+            return false;
         }
         if (binding.getKind() != IBinding.TYPE) {
             // Unpack the qualified name and remap method/field and type separately
